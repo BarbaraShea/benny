@@ -103,10 +103,12 @@ Ships in 6-10 weeks at prototype fidelity (no auth hardening, no production erro
 The subagent correctly identified the core primitive: reliable deadline extraction from unstructured policy text. The founder correctly identified the delivery layer: conversational, not dashboard. These are not competing architectures. The deadline engine is the backend; the conversational interface is the frontend. V1 builds both at prototype depth.
 
 **The matching pipeline (explicit):**
-1. PDF ingestion → LLM structured extraction → JSON per benefit: `{name, amount, eligibility_trigger, deadline_type, deadline_value, required_action, source_page}`
+1. PDF ingestion → LLM structured extraction → JSON per benefit: `{name, amount, eligibility_trigger, deadline_type, deadline_value, required_action, source_page, snapshot_category}`
    - `deadline_type` values: `relative` ("within 30 days of event"), `absolute` ("December 31"), `none` (e.g., lifetime maximums, ongoing wellness reimbursements)
    - `eligibility_trigger` may be compound (e.g., "hospital indemnity pays $200/day after day 3"): store as a plain-language string, surface as-is — v1 does not attempt to evaluate compound conditions programmatically
    - Benefits the model cannot confidently extract (null fields, contradictory text, scanned footnotes) are flagged as `needs_review: true` and surfaced to the user as "we couldn't read this section clearly — check page X yourself"
+   - `snapshot_category` is assigned by the LLM at extraction time: one of `free` (no action needed to access), `discount` (reduces cost of something user already pays), or `claim` (pays out but requires filing). This field drives the Benefits Snapshot grouping. If ambiguous, default to `claim` — it's better to surface something as requiring action than to let it disappear into "free."
+1a. Extracted JSON → **Benefits Snapshot** — plain-language summary grouped by `snapshot_category`, rendered before the user sees any raw table. This is the first screen after upload completes.
 2. User describes a life event in natural language
 3. LLM semantic match: life event description → relevant benefit records from the extracted JSON
 4. Response cites the matched benefit with source document reference ("Your accident policy, page 4")
@@ -133,10 +135,18 @@ Email-based auth (magic link). No passwords. User identity is an email + session
 **Core user flow (v1):**
 1. Enter email → magic link → land in app
 2. Upload benefit documents (drag-and-drop PDF — health, accident, supplemental, employer handbook)
-3. Extraction runs: "Found 7 benefits across 3 documents. Review and correct."
-4. **On-demand:** "Tell me what's happening" — user-initiated conversation box. Agent responds with document-grounded guidance: cites policy, states amount, states what to do, states deadline if applicable.
-5. **Proactive (with notification opt-in):** Weekly or monthly check-in initiated by the app. Push notification or email: "Quick check-in — what happened this week? Any purchases, injuries, doctor visits, or lifestyle changes?" Conversational prompt surfaces relevant entitlements the user wouldn't have thought to ask about. This is the core timing fix: the app initiates the conversation, not the user. User self-reports; no data integrations required.
-6. Optional: "Remind me before the deadline" → email at T-30, T-14, T-3 days
+3. Extraction runs silently. When complete, user lands on the **Benefits Snapshot** (Step 4 below) — not a raw table.
+4. **Benefits Snapshot (the aha moment):** Immediately after ingestion, Benny presents a plain-language summary organized into three sections:
+   - **What you get for free** — zero-cost entitlements requiring no claim: telehealth visits, preventive care at $0 copay, EAP sessions, gym reimbursement that auto-applies, etc. "You already have this. You just have to use it."
+   - **Discounts you're entitled to** — reduced costs on things the user already pays for: prescription pricing tiers, preferred provider discounts, vision/dental negotiated rates, credit card price protection. "You're probably overpaying for these."
+   - **Coverage that pays out — but only if you file** — benefits that require a claim to collect: accident/hospital indemnity payouts, FSA/HSA reimbursements, supplemental insurance triggers, travel insurance claims. "These are the ones people miss. We're watching them."
+   
+   This is the trust-building moment: the user sees that Benny has actually read and understood their documents — not just ingested them. The summary is written in plain English, not policy language. Each item links to the source page. The user can act on any item immediately from this screen (guided action, not form filing). This page is also shareable — "look what I didn't know I had" — which is v1's primary organic growth mechanic.
+
+5. **Editable review:** A "review and correct" affordance is accessible from the Snapshot but not the first thing shown. Users who want to verify or add missed benefits can open the full extracted table, edit fields, and add rows. Not load-bearing for the aha moment.
+6. **On-demand:** "Tell me what's happening" — user-initiated conversation box. Agent responds with document-grounded guidance: cites policy, states amount, states what to do, states deadline if applicable.
+7. **Proactive (with notification opt-in):** Weekly or monthly check-in initiated by the app. Push notification or email: "Quick check-in — what happened this week? Any purchases, injuries, doctor visits, or lifestyle changes?" Conversational prompt surfaces relevant entitlements the user wouldn't have thought to ask about. This is the core timing fix: the app initiates the conversation, not the user. User self-reports; no data integrations required.
+8. Optional: "Remind me before the deadline" → email at T-30, T-14, T-3 days
 
 **Out of scope for v1 (deliberate deferrals):**
 - Level 2 integrations (Plaid, email, calendar, location) — earnable after trust is established
